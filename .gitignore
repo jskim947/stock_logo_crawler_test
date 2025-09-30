@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/**
+*.log
+
+# Generated images
+final_test.png
+out_240.png
+out_300.png
+test_240.png
+test_300.png
+
+# Progress snapshots
+prototype/progress/*.json
