@@ -1,0 +1,56 @@
+---
+alwaysApply: true
+---
+## Global Project Rules
+
+- All assistant responses must be in Korean.
+- Read configuration from environment variables; do not hardcode defaults in code or docs. Document env keys in `.env.example`.
+- Prefer concise answers; avoid redundancy.
+- Use Markdown only where semantically appropriate (code fences for code, backticks for filenames/functions), and avoid heavy formatting.
+- When mentioning files, directories, classes, or functions, wrap with backticks (e.g., `app/components/Card.tsx`).
+- URLs must be wrapped as markdown links or backticks, not bare.
+- Preserve existing indentation styles in files (tabs vs spaces) when editing.
+- Before proposing commands, prefer non-interactive flags and avoid pagers.
+
+## Database Rules
+- For DB schema and queries, align with `logo_master` (not `tickers`), `logo_hash` is MD5 (32 chars), and `fs_exchange` replaces the deprecated "팩셋거래소".
+- Use `psycopg2-binary` for PostgreSQL connections, not asyncpg.
+- Reference [DATABASE.md](mdc:DATABASE.md) for schema definitions and operations.
+- Reference [MASTER_DATA.md](mdc:MASTER_DATA.md) for master data query structure.
+
+## API Rules
+- For logo.dev usage: respect daily limit (5,000/day). If quota is exhausted for the day, skip logo.dev for that day and continue other sources. Use parameters per docs, default `format=png`, `size=256`, `fallback=404`, and token via env var `${LOGO_DEV_TOKEN}`.
+- API endpoints follow RESTful conventions as defined in [IMPLEMENTATION.md](mdc:IMPLEMENTATION.md).
+- Use FastAPI for API server implementation.
+
+## Crawling Rules
+- For crawling: use `crawling_ticker` from `logo_master`. Use Playwright for TradingView, aiohttp for logo.dev.
+- Implement fallback and rate-limit friendly concurrency.
+- Use `fake_useragent` for User-Agent rotation.
+- Reference [CRAWLER.md](mdc:CRAWLER.md) for implementation details.
+
+## Project Structure Rules
+- Main project documentation is in [README.md](mdc:README.md).
+- Implementation guide is in [IMPLEMENTATION.md](mdc:IMPLEMENTATION.md).
+- Database schema is in [DATABASE.md](mdc:DATABASE.md).
+- Crawler implementation is in [CRAWLER.md](mdc:CRAWLER.md).
+- Master data queries are in [MASTER_DATA.md](mdc:MASTER_DATA.md).
+- Project TODOs are in [TODO.md](mdc:TODO.md).
+
+## Technology Stack Rules
+- Use Playwright (not Selenium) for browser automation.
+- Use aiohttp (not requests) for HTTP requests.
+- Use Pillow for image processing (SVG → PNG/WebP conversion).
+- Use PostgreSQL for data storage.
+- Use MinIO for file storage.
+- Use file-based progress tracking (not Redis).
+
+## Version Management Rules
+- Use latest stable versions as verified in [CRAWLER.md](mdc:CRAWLER.md).
+- Playwright >= 1.55.0, aiohttp >= 3.12.0, fake-useragent >= 2.2.0.
+- FastAPI >= 0.116.0, uvicorn >= 0.35.0.
+- psycopg2-binary >= 2.9.0 for database connections.
+
+### Self‑review & Caution (Special Global Rule)
+- After every assistant response, quickly self‑review for mistakes or inconsistencies with these rules and the codebase.
+- If any mistake or recurring risk is noticed (e.g., hardcoded defaults, misuse of `tickers` instead of `logo_master`, exceeding logo.dev quota), explicitly call it out and update future guidance to prevent recurrence.

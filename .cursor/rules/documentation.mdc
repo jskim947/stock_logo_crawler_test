@@ -1,0 +1,38 @@
+---
+globs: *.md
+description: Documentation rules
+---
+## Documentation Rules
+
+### File Structure
+- Main project overview: [README.md](mdc:README.md)
+- Implementation guide: [IMPLEMENTATION.md](mdc:IMPLEMENTATION.md)
+- Database schema: [DATABASE.md](mdc:DATABASE.md)
+- Crawler implementation: [CRAWLER.md](mdc:CRAWLER.md)
+- Master data queries: [MASTER_DATA.md](mdc:MASTER_DATA.md)
+- Project TODOs: [TODO.md](mdc:TODO.md)
+
+### Documentation Standards
+- Use Korean for all documentation.
+- Keep documentation concise and implementation-focused.
+- Include code examples where appropriate.
+- Use proper Markdown formatting.
+- Reference other files using `[filename](mdc:filename)` format.
+
+### Code Documentation
+- Include docstrings for all functions and classes.
+- Use type hints for better code understanding.
+- Document all environment variables.
+- Include usage examples in code comments.
+
+### API Documentation
+- Document all API endpoints with examples.
+- Include request/response schemas.
+- Document error codes and messages.
+- Provide usage examples for each endpoint.
+
+### Database Documentation
+- Document all table schemas and relationships.
+- Include sample queries and usage patterns.
+- Document indexes and constraints.
+- Explain data flow and relationships.

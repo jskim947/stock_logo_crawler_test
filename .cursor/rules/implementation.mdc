@@ -1,0 +1,37 @@
+---
+globs: *.py,*.md
+description: Implementation guidelines for logo crawling system
+---
+## Implementation Guidelines
+
+### Code Structure
+- Follow the implementation patterns defined in [IMPLEMENTATION.md](mdc:IMPLEMENTATION.md).
+- Use async/await patterns for all I/O operations.
+- Implement proper error handling and logging using loguru.
+
+### Database Operations
+- Use psycopg2-binary for database connections, not asyncpg.
+- Follow the schema defined in [DATABASE.md](mdc:DATABASE.md).
+- Use connection pooling for database operations.
+- Implement proper transaction management.
+
+### Crawling Implementation
+- Use Playwright for TradingView crawling as defined in [CRAWLER.md](mdc:CRAWLER.md).
+- Use aiohttp for logo.dev API calls.
+- Implement User-Agent rotation using fake_useragent.
+- Handle rate limiting and quota management.
+
+### Image Processing
+- Use Pillow for image conversion (SVG → PNG/WebP).
+- Convert to standard sizes: 64, 128, 256, 512px.
+- Implement proper error handling for image processing.
+
+### API Implementation
+- Follow RESTful conventions as defined in [IMPLEMENTATION.md](mdc:IMPLEMENTATION.md).
+- Use FastAPI for API server.
+- Implement proper request/response validation using Pydantic.
+
+### Environment Configuration
+- Use environment variables for all configuration.
+- Document all environment variables in .env.example.
+- Never hardcode configuration values in code.

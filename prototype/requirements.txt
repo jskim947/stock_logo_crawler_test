@@ -1,0 +1,33 @@
+# FastAPI 서버
+fastapi==0.116.1
+uvicorn==0.35.0
+
+# MinIO
+minio==7.2.7
+
+# 크롤링
+playwright==1.55.0
+aiohttp==3.12.0
+fake-useragent==2.2.0
+
+# 이미지 처리
+Pillow==10.0.0
+
+# 파일 업로드 지원
+python-multipart==0.0.6
+
+# 기타
+python-dotenv==1.0.1
+pydantic==2.11.0
+requests==2.32.3
+aiofiles==24.1.0
+
+# 로깅 및 인증
+loguru==0.7.2
+PyJWT==2.8.0
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+slowapi==0.1.9
+
+# 개발용 (선택사항)
+# jq==1.4.1  # JSON 파싱용 (run.sh에서 사용)

@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  logo-api-prototype:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    container_name: logo-api-prototype
+    ports:
+      - "8005:8005"
+    environment:
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin123
+      - MINIO_BUCKET=logos
+      - EXISTING_API_BASE=http://10.150.2.150:8004
+      - LOGO_DEV_TOKEN=${LOGO_DEV_TOKEN}
+      - IMAGE_SIZES=${IMAGE_SIZES}
+      - PROGRESS_DIR=progress
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-default-secret-key}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      - RATE_LIMIT_ENABLED=${RATE_LIMIT_ENABLED:-true}
+      - RATE_LIMIT_DEFAULT=${RATE_LIMIT_DEFAULT:-100/hour}
+    volumes:
+      - ./progress:/app/progress
+      - ./logs:/app/logs
+      - .:/app  # 개발용: 코드 변경 시 즉시 반영
+    depends_on:
+      - minio
+      - minio-init
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - logo-network
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: logo-minio-init
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 10;
+      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin123;
+      /usr/bin/mc mb myminio/logos --ignore-existing;
+      /usr/bin/mc policy set public myminio/logos;
+      echo 'MinIO initialization completed';
+      "
+    networks:
+      - logo-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: logo-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin123
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+    networks:
+      - logo-network
+
+volumes:
+  minio_data:
+
+networks:
+  logo-network:
+    driver: bridge
