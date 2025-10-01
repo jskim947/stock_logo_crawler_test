@@ -1,6 +1,6 @@
 """
 로고 크롤링 모듈
-TradingView와 logo.dev에서 로고를 수집하는 기능
+TradingView와 logo.dev에서 로고를 수집하는 기능을 제공
 """
 
 import asyncio
@@ -18,6 +18,9 @@ from playwright.async_api import async_playwright
 from fake_useragent import UserAgent
 from PIL import Image
 from minio import Minio
+import logging
+
+logger = logging.getLogger(__name__)
 
 class DateTimeEncoder(json.JSONEncoder):
     """datetime 객체를 JSON으로 직렬화하는 커스텀 인코더"""
@@ -41,61 +44,85 @@ class LogoCrawler:
         self.existing_api_base = os.getenv('EXISTING_API_BASE', 'http://10.150.2.150:8004')
         self.logo_dev_token = os.getenv('LOGO_DEV_TOKEN')
         
+        # existing_api 인스턴스 생성
+        from api_server import existing_api
+        self.existing_api = existing_api
+        
     async def crawl_tradingview(self, infomax_code: str, ticker: str) -> Optional[bytes]:
-        """TradingView에서 로고 크롤링"""
-        try:
-            async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)
-                context = await browser.new_context(
-                    viewport={'width': 1920, 'height': 1080},
-                    user_agent=self.ua.random
-                )
-                # 페이지 타임아웃 설정
-                context.set_default_timeout(20000)  # 20초
+        """TradingView에서 로고 크롤링 (재시도 로직 포함)"""
+        max_retries = 3
+        base_timeout = 10000  # 10초
+        
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"TradingView 크롤링 시도 {attempt + 1}/{max_retries}: {infomax_code}")
                 
-                page = await context.new_page()
+                # 시도마다 타임아웃 증가
+                timeout = base_timeout + (attempt * 5000)  # 10초, 15초, 20초
                 
-                # TradingView 페이지로 이동
-                url = f"https://www.tradingview.com/symbols/{ticker}/"
-                await page.goto(url, timeout=20000)
-                
-                # 로고 이미지 선택자 (여러 가능성 시도)
-                selectors = [
-                    'img[data-testid="logo"]',
-                    '.tv-symbol-header__logo img',
-                    '.tv-symbol-header__logo svg',
-                    'img[alt*="logo" i]',
-                    'img[src*="logo" i]',
-                    '.tv-symbol-header img',
-                    'header img'
-                ]
-                
-                for selector in selectors:
-                    try:
-                        element = await page.wait_for_selector(selector, timeout=15000)
-                        if element:
-                            # SVG인 경우
-                            if 'svg' in selector:
-                                svg_content = await element.inner_html()
-                                return svg_content.encode('utf-8')
-                            # IMG인 경우
-                            else:
-                                src = await element.get_attribute('src')
-                                if src and src.startswith('http'):
-                                    timeout = aiohttp.ClientTimeout(total=10)  # 10초 타임아웃
-                                    async with aiohttp.ClientSession(timeout=timeout) as session:
-                                        async with session.get(src) as response:
-                                            if response.status == 200:
-                                                return await response.read()
-                    except:
+                async with async_playwright() as p:
+                    browser = await p.chromium.launch(headless=True)
+                    context = await browser.new_context(
+                        viewport={'width': 1920, 'height': 1080},
+                        user_agent=self.ua.random
+                    )
+                    # 페이지 타임아웃 설정
+                    context.set_default_timeout(timeout)
+                    
+                    page = await context.new_page()
+                    
+                    # TradingView 페이지로 이동
+                    url = f"https://www.tradingview.com/symbols/{ticker}/"
+                    print(f"🔍 TradingView URL: {url} (타임아웃: {timeout}ms)")
+                    await page.goto(url, timeout=timeout)
+                    
+                    # 로고 이미지 선택자 (여러 가능성 시도)
+                    selectors = [
+                        'img[data-testid="logo"]',
+                        '.tv-symbol-header__logo img',
+                        '.tv-symbol-header__logo svg',
+                        'img[alt*="logo" i]',
+                        'img[src*="logo" i]',
+                        '.tv-symbol-header img',
+                        'header img'
+                    ]
+                    
+                    for selector in selectors:
+                        try:
+                            element = await page.wait_for_selector(selector, timeout=timeout + 5000)
+                            if element:
+                                # SVG인 경우
+                                if 'svg' in selector:
+                                    svg_content = await element.inner_html()
+                                    await browser.close()
+                                    return svg_content.encode('utf-8')
+                                # IMG인 경우
+                                else:
+                                    src = await element.get_attribute('src')
+                                    if src and src.startswith('http'):
+                                        timeout_http = aiohttp.ClientTimeout(total=10)  # 10초 타임아웃
+                                        async with aiohttp.ClientSession(timeout=timeout_http) as session:
+                                            async with session.get(src) as response:
+                                                if response.status == 200:
+                                                    await browser.close()
+                                                    return await response.read()
+                        except:
+                            continue
+                    
+                    await browser.close()
+                    if attempt < max_retries - 1:
+                        print(f"🔄 재시도 예정: {infomax_code}")
                         continue
-                
-                await browser.close()
+                    return None
+                    
+            except Exception as e:
+                print(f"TradingView 크롤링 오류 ({infomax_code}, 시도 {attempt + 1}): {e}")
+                if attempt < max_retries - 1:
+                    print(f"🔄 재시도 예정: {infomax_code}")
+                    continue
                 return None
-                
-        except Exception as e:
-            print(f"TradingView 크롤링 오류 ({infomax_code}): {e}")
-            return None
+        
+        return None
     
     async def crawl_logo_dev(self, infomax_code: str, api_domain: str) -> Optional[bytes]:
         """logo.dev API에서 로고 크롤링"""
@@ -177,15 +204,31 @@ class LogoCrawler:
             pass
     
     def convert_image(self, image_data: bytes, infomax_code: str) -> Dict[str, bytes]:
-        """이미지를 다양한 크기로 변환"""
+        """이미지를 다양한 크기로 변환 (SVG → PNG/WebP 포함)"""
         try:
-            # SVG인 경우 원본 그대로 반환
-            if image_data.startswith(b'<svg') or image_data.startswith(b'<?xml'):
-                return {"original": image_data}
+            results = {}
             
-            # BytesIO 객체를 생성하고 이미지 열기
-            image_buffer = BytesIO(image_data)
-            image = Image.open(image_buffer)
+            # SVG인 경우 PNG/WebP로 변환
+            if image_data.startswith(b'<svg') or image_data.startswith(b'<?xml'):
+                logger.info(f"SVG 파일 감지: {infomax_code}")
+                
+                # SVG를 PIL Image로 변환하기 위해 cairosvg 사용 시도
+                try:
+                    import cairosvg
+                    # SVG를 PNG로 변환
+                    png_data = cairosvg.svg2png(bytestring=image_data)
+                    image = Image.open(BytesIO(png_data))
+                    logger.info(f"SVG → PNG 변환 성공: {infomax_code}")
+                except ImportError:
+                    logger.warning("cairosvg가 설치되지 않음. SVG 원본만 저장")
+                    return {"original": image_data}
+                except Exception as e:
+                    logger.error(f"SVG 변환 실패: {e}")
+                    return {"original": image_data}
+            else:
+                # 일반 이미지 파일
+                image_buffer = BytesIO(image_data)
+                image = Image.open(image_buffer)
             
             # 표준 사이즈로 변환 (환경변수 IMAGE_SIZES 사용, 기본 240,300)
             sizes_env = os.getenv('IMAGE_SIZES', '240,300')
@@ -193,30 +236,41 @@ class LogoCrawler:
                 sizes = [int(s.strip()) for s in sizes_env.split(',') if s.strip()]
             except Exception:
                 sizes = [240, 300]
+            
             formats = ['PNG', 'WebP']
-            results = {}
+            
+            # 원본도 저장 (SVG인 경우)
+            if image_data.startswith(b'<svg') or image_data.startswith(b'<?xml'):
+                results["original"] = image_data
             
             for size in sizes:
                 for format_type in formats:
-                    # 리사이즈
-                    resized = image.resize((size, size), Image.Resampling.LANCZOS)
-                    
-                    # 바이트로 변환
-                    output = BytesIO()
-                    if format_type == 'PNG':
-                        resized.save(output, format='PNG', optimize=True)
-                    else:  # WebP
-                        resized.save(output, format='WebP', quality=85, optimize=True)
-                    
-                    results[f"{format_type.lower()}_{size}"] = output.getvalue()
+                    try:
+                        # 리사이즈
+                        resized = image.resize((size, size), Image.Resampling.LANCZOS)
+                        
+                        # 바이트로 변환
+                        output = BytesIO()
+                        if format_type == 'PNG':
+                            resized.save(output, format='PNG', optimize=True)
+                        else:  # WebP
+                            resized.save(output, format='WebP', quality=85, optimize=True)
+                        
+                        results[f"{format_type.lower()}_{size}"] = output.getvalue()
+                        logger.debug(f"이미지 변환 완료: {format_type.lower()}_{size}px")
+                        
+                    except Exception as e:
+                        logger.error(f"이미지 변환 실패 ({format_type}_{size}px): {e}")
+                        continue
             
+            logger.info(f"이미지 변환 완료: {infomax_code}, {len(results)}개 파일")
             return results
             
         except Exception as e:
-            print(f"이미지 변환 오류 ({infomax_code}): {e}")
+            logger.error(f"이미지 변환 오류 ({infomax_code}): {e}")
             # 변환 실패해도 원본은 저장
             result = {"original": image_data}
-            print(f"🔍 변환 실패로 원본만 반환: {len(result)}개")
+            logger.info(f"변환 실패로 원본만 반환: {len(result)}개")
             return result
     
     async def save_to_minio(self, image_data: bytes, object_key: str, content_type: str = "image/png"):
@@ -235,62 +289,81 @@ class LogoCrawler:
             return False
     
     async def save_to_database(self, infomax_code: str, logo_hash: str, file_info: Dict):
-        """데이터베이스에 로고 정보 저장"""
+        """데이터베이스에 로고 정보 저장 (직접 API 호출)"""
         print(f"🔍 DB 저장 시작: {infomax_code}, {logo_hash}")
+        print(f"🔍 file_info: {file_info}")
         try:
-            # 기존 API를 통해 데이터 저장
-            timeout = aiohttp.ClientTimeout(total=15)  # 15초 타임아웃
+            # 직접 기존 API 호출
+            timeout = aiohttp.ClientTimeout(total=15)
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                # logos 테이블에 저장
-                logo_url = f"{self.existing_api_base}/api/schemas/raw_data/tables/logos/upsert"
-                logo_data = {
-                    "data": {
-                        "logo_hash": logo_hash,
-                        "is_deleted": False,
-                        "created_at": datetime.now(),
-                        "updated_at": datetime.now()
-                    },
-                    "conflict_columns": ["logo_hash"]
+                
+                # 1. logos 테이블 확인/생성
+                logo_url = f"{self.existing_api_base}/api/schemas/raw_data/tables/logos/query"
+                logo_params = {
+                    "search_column": "logo_hash",
+                    "search": logo_hash,
+                    "limit": 1
                 }
-                async with session.post(logo_url, json=logo_data, headers={'Content-Type': 'application/json'}) as response:
-                    print(f"🔍 logos 테이블 저장 응답: {response.status}")
+                
+                async with session.get(logo_url, params=logo_params) as response:
                     if response.status == 200:
-                        logo_result = await response.json()
-                        print(f"🔍 logos 저장 결과: {logo_result}")
-                        logo_id = logo_result.get('data', {}).get('logo_id')
-                        
-                        if logo_id:
-                            print(f"🔍 logo_id 획득: {logo_id}")
-                            # logo_files 테이블에 저장
-                            file_url = f"{self.existing_api_base}/api/schemas/raw_data/tables/logo_files/upsert"
-                            file_data = {
-                                "data": {
-                                    "logo_id": logo_id,
-                                    "minio_object_key": file_info['object_key'],
-                                    "file_format": file_info['format'],
-                                    "dimension_width": file_info['dimension_width'],
-                                    "dimension_height": file_info['dimension_height'],
-                                    "file_size": file_info['file_size'],
-                                    "is_original": file_info.get('is_original', False),
-                                    "upload_type": "crawled",
-                                    "data_source": file_info['data_source'],
-                                    "created_at": datetime.now()
-                                },
-                                "conflict_columns": ["logo_id", "minio_object_key"]
-                            }
-                            async with session.post(file_url, json=file_data, headers={'Content-Type': 'application/json'}) as file_response:
-                                print(f"🔍 logo_files 테이블 저장 응답: {file_response.status}")
-                                if file_response.status == 200:
-                                    file_result = await file_response.json()
-                                    print(f"🔍 logo_files 저장 결과: {file_result}")
-                                return file_response.status == 200
+                        logo_data = await response.json()
+                        if logo_data and 'data' in logo_data and logo_data['data']:
+                            logo_id = logo_data['data'][0]['logo_id']
+                            print(f"✅ 기존 logos 데이터 사용: logo_id={logo_id}")
                         else:
-                            print(f"❌ logo_id를 찾을 수 없음: {logo_result}")
+                            # 새로 생성
+                            logo_upsert_url = f"{self.existing_api_base}/api/schemas/raw_data/tables/logos/upsert"
+                            logo_upsert_data = {
+                                "data": {
+                                    "logo_hash": logo_hash,
+                                    "is_deleted": False
+                                },
+                                "conflict_columns": ["logo_hash"]
+                            }
+                            
+                            async with session.post(logo_upsert_url, json=logo_upsert_data) as upsert_response:
+                                if upsert_response.status == 200:
+                                    upsert_data = await upsert_response.json()
+                                    logo_id = upsert_data['data']['logo_id']
+                                    print(f"✅ logos 테이블 저장 성공: logo_id={logo_id}")
+                                else:
+                                    print(f"❌ logos 테이블 저장 실패: {upsert_response.status}")
+                                    return False
                     else:
-                        print(f"❌ logos 테이블 저장 실패: {response.status}")
-                        error_text = await response.text()
+                        print(f"❌ logos 테이블 조회 실패: {response.status}")
+                        return False
+                
+                # 2. logo_files 테이블 저장
+                file_url = f"{self.existing_api_base}/api/schemas/raw_data/tables/logo_files/upsert"
+                file_data = {
+                    "data": {
+                        "logo_id": logo_id,
+                        "file_format": file_info['format'],
+                        "dimension_width": file_info['dimension_width'],
+                        "dimension_height": file_info['dimension_height'],
+                        "file_size": file_info['file_size'],
+                        "minio_object_key": file_info['object_key'],
+                        "data_source": file_info['data_source'],
+                        "upload_type": "crawled",
+                        "is_original": file_info.get('is_original', True)
+                    },
+                    "conflict_columns": ["minio_object_key"]
+                }
+                
+                print(f"🔍 logo_files 저장 데이터: {file_data}")
+                
+                async with session.post(file_url, json=file_data) as file_response:
+                    if file_response.status == 200:
+                        print(f"✅ logo_files 테이블 저장 성공: logo_id={logo_id}")
+                        print(f"✅ DB 저장 완료: {infomax_code}")
+                        return True
+                    else:
+                        error_text = await file_response.text()
+                        print(f"❌ logo_files 테이블 저장 실패: {file_response.status}")
                         print(f"❌ 오류 내용: {error_text}")
-            return False
+                        return False
+                        
         except Exception as e:
             print(f"데이터베이스 저장 오류: {e}")
             return False
@@ -303,12 +376,12 @@ class LogoCrawler:
             print(f"🔍 크롤링 시작: {infomax_code}, ticker={ticker}, api_domain={api_domain}")
             print(f"🔍 함수 진입 확인: {infomax_code}")
             
-            # 타임아웃 설정 (60초)
+            # 타임아웃 설정 (30초)
             import asyncio
             try:
                 result = await asyncio.wait_for(
                     self._crawl_logo_internal(infomax_code, ticker, api_domain),
-                    timeout=60.0
+                    timeout=30.0
                 )
                 print(f"🔍🔍🔍 CRAWL_LOGO 함수 완료: {infomax_code}, 결과: {result}")
                 return result
@@ -367,13 +440,31 @@ class LogoCrawler:
             converted_images = self.convert_image(image_data, infomax_code)
             print(f"🔍 이미지 변환 완료: {infomax_code}")
             
+            # master에서 logo_hash 조회
+            print(f"🔍 master에서 logo_hash 조회: {infomax_code}")
+            try:
+                master_result = self.existing_api.query_table("raw_data", "logo_master", {
+                    "search_column": "infomax_code",
+                    "search": infomax_code,
+                    "limit": 1
+                })
+                
+                if master_result and 'data' in master_result and master_result['data']:
+                    logo_hash = master_result['data'][0]['logo_hash']
+                    print(f"🔍 master logo_hash 조회 성공: {logo_hash}")
+                else:
+                    print(f"❌ master logo_hash 조회 실패: {infomax_code}")
+                    return False
+            except Exception as e:
+                print(f"❌ master 조회 오류: {e}")
+                return False
+            
             # MinIO에 저장
             saved_files = []
             print(f"🔍 변환된 이미지 개수: {len(converted_images)}")
             for format_key, img_data in converted_images.items():
                 if format_key == "original":
-                    # logo_hash 기반 저장으로 통일 (원본 SVG도 logo_hash 키 사용을 위해 infomax_code 해시)
-                    logo_hash = hashlib.md5(f"{infomax_code}".encode()).hexdigest()
+                    # master의 logo_hash 사용
                     object_key = f"{logo_hash}_original.svg"
                     content_type = "image/svg+xml"
                     is_original = True
@@ -381,7 +472,7 @@ class LogoCrawler:
                     size = None
                 else:
                     format_type, size = format_key.split('_')
-                    logo_hash = hashlib.md5(f"{infomax_code}".encode()).hexdigest()
+                    # master의 logo_hash 사용
                     object_key = f"{logo_hash}_{size}.{format_type.lower()}"
                     content_type = f"image/{format_type.lower()}"
                     is_original = False
@@ -409,7 +500,10 @@ class LogoCrawler:
                 
             for file_info in saved_files:
                 print(f"🔍 파일 저장: {file_info}")
-                await self.save_to_database(infomax_code, logo_hash, file_info)
+                # DB 저장은 API 서버에서 처리하도록 함
+                print(f"✅ 파일 저장 완료 (DB는 별도 처리): {infomax_code}")
+                # DB 저장 비활성화 - API 서버에서 처리
+                # save_to_database 함수 호출 완전 제거
             
             print(f"로고 크롤링 성공: {infomax_code} ({len(saved_files)}개 파일)")
             return True

@@ -25,9 +25,9 @@ services:
       - RATE_LIMIT_ENABLED=${RATE_LIMIT_ENABLED:-true}
       - RATE_LIMIT_DEFAULT=${RATE_LIMIT_DEFAULT:-100/hour}
     volumes:
+      - .:/app
       - ./progress:/app/progress
       - ./logs:/app/logs
-      - .:/app  # 개발용: 코드 변경 시 즉시 반영
     depends_on:
       - minio
       - minio-init

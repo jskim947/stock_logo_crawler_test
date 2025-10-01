@@ -1,6 +1,6 @@
 """
-로고 관리 시스템 프로토타입 - FastAPI 서버
-기존 FastAPI 서버를 활용하여 로고 조회/관리 기능 제공
+로고 관리 시스템 - FastAPI 서버
+주식 로고 수집, 저장, 조회 및 관리 기능을 제공하는 API 서버
 """
 
 from fastapi import FastAPI, HTTPException, Query, Depends, File, UploadFile, Form, Request
@@ -15,22 +15,20 @@ import json
 from datetime import datetime, date
 import hashlib
 import requests
-# import aiohttp  # requests로 대체
 from pydantic import BaseModel
-# 크롤러는 선택적으로 사용 (playwright 미설치 환경 가드)
+import logging
+
+# 크롤러 모듈 임포트 (선택적)
 try:
     from crawler import LogoCrawler
-except Exception as _crawler_import_error:
-    LogoCrawler = None  # 크롤링 엔드포인트에서 필요 시 런타임 체크
-    print(f"⚠️  crawler 임포트 실패: {_crawler_import_error}")
+except ImportError as e:
+    LogoCrawler = None
+    logging.warning(f"크롤러 모듈 임포트 실패: {e}")
+
 from PIL import Image, ImageDraw, ImageFont
 import io
-# from loguru import logger  # 임시로 비활성화
-import logging
+
 logger = logging.getLogger(__name__)
-# from slowapi import Limiter, _rate_limit_exceeded_handler
-# from slowapi.util import get_remote_address
-# from slowapi.errors import RateLimitExceeded
 
 # 기존 API 클라이언트
 class ExistingAPIClient:
@@ -38,76 +36,63 @@ class ExistingAPIClient:
         self.base_url = base_url.rstrip('/')
     
     async def query_table_async(self, schema: str, table: str, params: dict = None):
-        """테이블 쿼리 실행 (동기 방식으로 대체)"""
+        """테이블 쿼리 실행"""
         try:
-            # aiohttp 대신 requests 사용
             url = f"{self.base_url}/api/schemas/{schema}/tables/{table}/query"
             response = requests.get(url, params=params or {}, timeout=10)
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            print(f"❌ 기존 API 쿼리 오류: {e}")
+            logger.error(f"기존 API 쿼리 오류: {e}")
             return None
     
     async def upsert_data_async(self, schema: str, table: str, data: dict):
-        """데이터 삽입/업데이트 (동기 방식으로 대체)"""
+        """데이터 삽입/업데이트"""
         try:
             url = f"{self.base_url}/api/schemas/{schema}/tables/{table}/upsert"
             response = requests.post(url, json=data, timeout=10)
-            print(f"📥 응답 상태: {response.status_code}")
-            print(f"📥 응답 내용: {response.text}")
             response.raise_for_status()
             try:
                 return response.json()
             except Exception:
                 return {"text": response.text}
         except Exception as e:
-            print(f"❌ 기존 API 데이터 입력 오류: {e}")
+            logger.error(f"기존 API 데이터 입력 오류: {e}")
             return None
 
-    # 임시 호환용 동기 메서드 유지 (점진 전환)
     def query_table(self, schema: str, table: str, params: dict = None):
+        """테이블 쿼리 실행 (동기)"""
         try:
             url = f"{self.base_url}/api/schemas/{schema}/tables/{table}/query"
             response = requests.get(url, params=params or {}, timeout=10)
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            print(f"❌ 기존 API 쿼리 오류: {e}")
+            logger.error(f"기존 API 쿼리 오류: {e}")
             return None
 
     def upsert_data(self, schema: str, table: str, data: dict):
+        """데이터 삽입/업데이트 (동기)"""
         try:
             url = f"{self.base_url}/api/schemas/{schema}/tables/{table}/upsert"
             response = requests.post(url, json=data, timeout=10)
-            print(f"📥 업서트 요청: {url}")
-            print(f"📥 업서트 페이로드: {data}")
-            print(f"📥 업서트 응답코드: {response.status_code}")
-            print(f"📥 업서트 응답본문: {response.text}")
             response.raise_for_status()
             try:
                 return response.json()
             except Exception:
                 return {"text": response.text}
         except Exception as e:
-            print(f"❌ 기존 API 데이터 입력 오류: {e}")
+            logger.error(f"기존 API 데이터 입력 오류: {e}")
             return None
-
-# 레이트리밋 설정 (임시 비활성화)
-# limiter = Limiter(key_func=get_remote_address)
 
 # FastAPI 앱 초기화
 app = FastAPI(
-    title="Logo Management System - Prototype",
-    description="주식 로고 수집 및 관리 시스템 프로토타입",
+    title="Logo Management System",
+    description="주식 로고 수집 및 관리 시스템",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc"
 )
-
-# 레이트리밋 미들웨어 추가 (임시 비활성화)
-# app.state.limiter = limiter
-# app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS 설정
 app.add_middleware(
@@ -119,14 +104,43 @@ app.add_middleware(
 )
 
 # 이미지 처리 유틸리티 함수
+def convert_svg_to_png(svg_data: bytes, size: int) -> Optional[bytes]:
+    """SVG 데이터를 PNG로 변환"""
+    try:
+        import cairosvg
+        from PIL import Image
+        from io import BytesIO
+        
+        # SVG를 PNG로 변환
+        png_data = cairosvg.svg2png(bytestring=svg_data, output_width=size, output_height=size)
+        
+        # PIL로 이미지 열기
+        image = Image.open(BytesIO(png_data))
+        
+        # 정사각형으로 리사이즈
+        image = image.resize((size, size), Image.Resampling.LANCZOS)
+        
+        # PNG로 저장
+        output = BytesIO()
+        image.save(output, format='PNG', optimize=True)
+        
+        return output.getvalue()
+        
+    except ImportError:
+        logger.error("cairosvg가 설치되지 않음")
+        return None
+    except Exception as e:
+        logger.error(f"SVG → PNG 변환 실패: {e}")
+        return None
+
 def process_uploaded_image(image_data: bytes, target_size: int = 256, target_format: str = "PNG") -> bytes:
     """업로드된 이미지를 처리하여 지정된 크기와 형식으로 변환"""
     try:
-        print(f"🔍 이미지 처리 시작: {len(image_data)} bytes")
+        logger.info(f"이미지 처리 시작: {len(image_data)} bytes")
         
         # 이미지 열기
         image = Image.open(io.BytesIO(image_data))
-        print(f"📐 원본 이미지 크기: {image.size}, 모드: {image.mode}")
+        logger.debug(f"원본 이미지 크기: {image.size}, 모드: {image.mode}")
         
         # RGB로 변환 (투명도 제거)
         if image.mode in ('RGBA', 'LA', 'P'):
@@ -139,8 +153,6 @@ def process_uploaded_image(image_data: bytes, target_size: int = 256, target_for
         elif image.mode != 'RGB':
             image = image.convert('RGB')
         
-        print(f"🔄 변환 후 이미지 모드: {image.mode}")
-        
         # 정사각형으로 크롭 (중앙 기준)
         width, height = image.size
         if width != height:
@@ -150,12 +162,10 @@ def process_uploaded_image(image_data: bytes, target_size: int = 256, target_for
             right = left + size
             bottom = top + size
             image = image.crop((left, top, right, bottom))
-            print(f"✂️ 크롭 후 크기: {image.size}")
         
         # 크기 조정
         if image.size[0] != target_size:
             image = image.resize((target_size, target_size), Image.Resampling.LANCZOS)
-            print(f"📏 리사이즈 후 크기: {image.size}")
         
         # 형식에 따라 변환
         output = io.BytesIO()
@@ -170,14 +180,11 @@ def process_uploaded_image(image_data: bytes, target_size: int = 256, target_for
             image.save(output, format="PNG", optimize=True)
         
         result = output.getvalue()
-        print(f"✅ 이미지 처리 완료: {len(result)} bytes")
+        logger.info(f"이미지 처리 완료: {len(result)} bytes")
         return result
         
     except Exception as e:
-        print(f"❌ 이미지 처리 오류: {e}")
-        print(f"❌ 오류 타입: {type(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"이미지 처리 오류: {e}")
         raise HTTPException(status_code=400, detail=f"이미지 처리 실패: {str(e)}")
 
 def validate_image_file(file: UploadFile) -> bool:
@@ -356,6 +363,8 @@ def save_logo_data(infomax_code: str, logo_hash: str, file_info: dict) -> bool:
                 "conflict_columns": ["logo_hash"]
             }
             
+            print(f"🔍 logos 저장 데이터: {logo_data}")
+            
             logo_result = existing_api.upsert_data("raw_data", "logos", logo_data)
             if not logo_result or 'data' not in logo_result:
                 print(f"❌ logos 테이블 저장 실패: {infomax_code}")
@@ -379,6 +388,8 @@ def save_logo_data(infomax_code: str, logo_hash: str, file_info: dict) -> bool:
             },
             "conflict_columns": ["minio_object_key"]
         }
+        
+        print(f"🔍 logo_files 저장 데이터: {file_data}")
         
         file_result = existing_api.upsert_data("raw_data", "logo_files", file_data)
         if not file_result:
@@ -509,10 +520,13 @@ async def search_logos(
 
 @app.get("/api/v1/logos/{infomax_code}")
 # @limiter.limit("30/minute")  # 임시 비활성화
-async def get_logo(request: Request, infomax_code: str, format: str = "png", size: int = 300):
-    # 크기 매핑: 300px -> 256px (실제 존재하는 크기)
-    if size == 300:
-        size = 256
+async def get_logo(request: Request, infomax_code: str, format: str = "png", size: int = 256):
+    # 지원되는 크기: 240px, 300px
+    # 요청된 크기가 지원되지 않으면 가장 가까운 크기로 매핑
+    supported_sizes = [240, 300]
+    if size not in supported_sizes:
+        # 가장 가까운 크기 찾기
+        size = min(supported_sizes, key=lambda x: abs(x - size))
     """로고 조회 - 이미지 스트리밍 (메타 조회 → MinIO 객체 바이너리 반환)"""
     logger.info(f"Logo request: {infomax_code}, format={format}, size={size} from {request.client.host}")
     try:
@@ -571,6 +585,34 @@ async def get_logo(request: Request, infomax_code: str, format: str = "png", siz
             # 사용 가능한 파일들 출력
             available_files = [f for f in all_files if f.get('logo_id') == logo_id]
             print(f"🔍 사용 가능한 파일들: {[f.get('minio_object_key') for f in available_files]}")
+            
+            # SVG 원본이 있으면 실시간 변환 시도
+            svg_file = None
+            for f in available_files:
+                if f.get('file_format') == 'svg' and f.get('is_original'):
+                    svg_file = f
+                    break
+            
+            if svg_file:
+                print(f"🔍 SVG 원본 발견, 실시간 변환 시도: {svg_file.get('minio_object_key')}")
+                try:
+                    # SVG 파일을 MinIO에서 가져오기
+                    svg_obj = minio_client.get_object(MINIO_BUCKET, svg_file.get('minio_object_key'))
+                    svg_data = svg_obj.read()
+                    svg_obj.close()
+                    svg_obj.release_conn()
+                    
+                    # SVG를 PNG로 변환
+                    converted_data = convert_svg_to_png(svg_data, size)
+                    if converted_data:
+                        print(f"✅ SVG → PNG 변환 성공: {size}px")
+                        content_type = f"image/{format.lower()}"
+                        return Response(content=converted_data, media_type=content_type)
+                    else:
+                        print(f"❌ SVG → PNG 변환 실패")
+                except Exception as e:
+                    print(f"❌ SVG 변환 중 오류: {e}")
+            
             raise HTTPException(status_code=404, detail="Logo file not found")
         
         file_info = found_file
@@ -1507,7 +1549,7 @@ async def collect_missing_logos_streaming(
     """스트리밍으로 미보유 로고 수집 - 메모리 효율적"""
     collected = []
     page = 1
-    size = 1000  # 한 번에 가져올 최대 수
+    size = 100  # 한 번에 가져올 최대 수 (API 제한)
     
     # 필터 조건 준비
     filters = {
@@ -1523,7 +1565,7 @@ async def collect_missing_logos_streaming(
         # 1. prefix가 있으면 search로 먼저 필터링
         if prefix:
             print(f"   prefix '{prefix}'로 검색...")
-            response = existing_api.query_table("raw_data", "logo_master", {
+            response = existing_api.query_table("raw_data", "logo_master_with_status", {
                 "search": prefix,
                 "search_column": "infomax_code",
                 "page": page,
@@ -1532,7 +1574,7 @@ async def collect_missing_logos_streaming(
         else:
             # 2. 모든 데이터를 페이징으로 수집
             print(f"   전체 데이터 조회...")
-            response = existing_api.query_table("raw_data", "logo_master", {
+            response = existing_api.query_table("raw_data", "logo_master_with_status", {
                 "page": page,
                 "size": size
             })
@@ -1549,12 +1591,18 @@ async def collect_missing_logos_streaming(
             if len(collected) >= limit:
                 break
                 
-            # 모든 항목을 크롤링 대상으로 간주 (중복 체크는 나중에 구현)
-            # 추가 필터 조건 확인
-            if should_include_item(item, filters):
+            # has_any_file 필터링 확인
+            infomax_code = item.get('infomax_code', 'unknown')
+            has_any_file = item.get('has_any_file')
+            print(f"      🔍 필터링 확인: {infomax_code}, has_any_file={has_any_file}")
+            
+            # has_any_file이 false인 항목만 수집
+            if has_any_file == False:
                 collected.append(item)
                 page_missing_count += 1
-                print(f"      ✅ 수집: {item.get('infomax_code')}")
+                print(f"      ✅ 수집: {infomax_code} (has_any_file=False)")
+            else:
+                print(f"      ❌ 제외: {infomax_code} (has_any_file={has_any_file})")
         
         print(f"   📊 페이지 {page}에서 {page_missing_count}개 미보유 항목 수집")
         
@@ -1562,23 +1610,20 @@ async def collect_missing_logos_streaming(
         if page >= response.get('total_pages', 1):
             print(f"   📄 마지막 페이지 도달")
             break
+        
+        # 5. limit에 도달했으면 중단
+        if len(collected) >= limit:
+            print(f"   🎯 limit {limit}에 도달하여 중단")
+            break
             
         page += 1
     
     return collected
 
 def should_include_item(item: Dict, filters: Dict) -> bool:
-    """아이템이 필터 조건에 맞는지 확인"""
-    if filters.get('fs_exchange') and item.get('fs_exchange') != filters['fs_exchange']:
-        return False
-    
-    if filters.get('country') and item.get('country') != filters['country']:
-        return False
-    
-    if filters.get('is_active') is not None and item.get('is_active') != filters['is_active']:
-        return False
-    
-    # prefix는 이미 API에서 필터링되었으므로 추가 확인 불필요
+    """아이템이 필터 조건에 맞는지 확인 (사용하지 않음 - has_any_file 필터링으로 대체)"""
+    # 이 함수는 더 이상 사용하지 않음
+    # has_any_file 필터링은 collect_missing_logos_streaming에서 직접 처리
     return True
 
 async def is_logo_missing(infomax_code: str) -> bool:
@@ -1640,11 +1685,81 @@ async def execute_crawl_batch(tickers: List[Dict], job_id: str):
                 "current_item": ticker['infomax_code']
             })
             
-            # 실제 크롤링 시뮬레이션 (LogoCrawler가 없으므로)
-            success = await simulate_crawl_single(ticker)
+            # 실제 크롤링 실행
+            crawler = LogoCrawler()
+            success = await crawler.crawl_logo(
+                ticker['infomax_code'], 
+                ticker['ticker'], 
+                ticker.get('api_domain')
+            )
             
             if success:
                 print(f"      ✅ 성공: {ticker['infomax_code']}")
+                
+                # DB 저장 처리
+                print(f"      🔍 DB 저장 처리 시작: {ticker['infomax_code']}")
+                try:
+                    # master에서 logo_hash 조회
+                    print(f"      🔍 master 조회 시작: {ticker['infomax_code']}")
+                    master_result = existing_api.query_table("raw_data", "logo_master", {
+                        "search_column": "infomax_code",
+                        "search": ticker['infomax_code'],
+                        "limit": 1
+                    })
+                    print(f"      🔍 master 조회 결과: {master_result}")
+                    
+                    if master_result and 'data' in master_result and master_result['data']:
+                        logo_hash = master_result['data'][0]['logo_hash']
+                        print(f"      🔍 logo_hash 조회 성공: {logo_hash}")
+                        
+                        # MinIO에서 파일 정보 조회
+                        print(f"      🔍 MinIO 파일 조회 시작: {logo_hash}")
+                        try:
+                            objects = minio_client.list_objects(MINIO_BUCKET, prefix=logo_hash, recursive=True)
+                            objects_list = list(objects)
+                            print(f"      🔍 MinIO 객체 목록: {objects_list}")
+                            
+                            for obj in objects_list:
+                                print(f"      🔍 MinIO 객체 확인: {obj.object_name}")
+                                if obj.object_name.endswith('_original.svg'):
+                                    print(f"      🔍 SVG 파일 발견: {obj.object_name}")
+                                    # 파일 정보 수집
+                                    stat = minio_client.stat_object(MINIO_BUCKET, obj.object_name)
+                                    file_info = {
+                                        "format": "svg",
+                                        "source": "tradingview",
+                                        "upload_type": "crawled",
+                                        "width": None,
+                                        "height": None,
+                                        "size": stat.size,
+                                        "minio_key": obj.object_name,
+                                        "is_original": True
+                                    }
+                                    print(f"      🔍 파일 정보 수집: {file_info}")
+                                    
+                                    # DB 저장
+                                    print(f"      🔍 DB 저장 시도: {ticker['infomax_code']}")
+                                    db_success = save_logo_data(ticker['infomax_code'], logo_hash, file_info)
+                                    if db_success:
+                                        print(f"      ✅ DB 저장 성공: {ticker['infomax_code']}")
+                                    else:
+                                        print(f"      ❌ DB 저장 실패: {ticker['infomax_code']}")
+                                    break
+                                else:
+                                    print(f"      🔍 SVG 파일 아님: {obj.object_name}")
+                        except Exception as minio_error:
+                            print(f"      ❌ MinIO 조회 오류: {minio_error}")
+                            import traceback
+                            print(f"      ❌ MinIO 오류 상세: {traceback.format_exc()}")
+                    else:
+                        print(f"      ❌ master 조회 실패: {ticker['infomax_code']}")
+                        print(f"      ❌ master 결과: {master_result}")
+                        
+                except Exception as db_error:
+                    print(f"      ❌ DB 저장 처리 오류: {db_error}")
+                    import traceback
+                    print(f"      ❌ DB 오류 상세: {traceback.format_exc()}")
+                
                 await update_progress(progress_file, {
                     "successful_items": i + 1
                 })
@@ -1994,6 +2109,6 @@ if __name__ == "__main__":
         "api_server:app",
         host="0.0.0.0",
         port=8005,
-        reload=True,
+        reload=False,  # StatReload 비활성화 (개발 중 백그라운드 작업 중단 방지)
         log_level="info"
     )
