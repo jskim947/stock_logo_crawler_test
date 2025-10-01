@@ -215,7 +215,7 @@ class PlaywrightCrawler:
             """)
             
             try:
-                base_url = os.getenv('TRADINGVIEW_BASE_URL', 'https://www.tradingview.com')
+                base_url = os.getenv('WEBSITE_BASE_URL', 'https://www.tradingview.com')
                 url = f'{base_url}/symbols/{ticker}/news/'
                 await page.goto(url, timeout=self.timeout)
                 
@@ -261,7 +261,7 @@ class AiohttpClient:
         headers = {
             'User-Agent': self.ua.random,
             'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-            'Referer': os.getenv('TRADINGVIEW_BASE_URL', 'https://www.tradingview.com') + '/'
+            'Referer': os.getenv('WEBSITE_BASE_URL', 'https://www.tradingview.com') + '/'
         }
         
         async with aiohttp.ClientSession(
@@ -396,7 +396,7 @@ RELOAD=true
 IMAGE_SIZES=240,300
 
 # 크롤링 소스 설정
-TRADINGVIEW_BASE_URL=https://www.tradingview.com
+WEBSITE_BASE_URL=https://www.tradingview.com
 ```
 
 ## 배포 및 운영
