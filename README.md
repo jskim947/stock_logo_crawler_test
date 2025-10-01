@@ -70,4 +70,10 @@ stock_logo_crawler_test/
 - `PLAYWRIGHT_HEADLESS`, `AIOHTTP_TIMEOUT`, `USE_FAKE_USERAGENT`, `PROGRESS_DIR`
 - `IMAGE_SIZES`
 
+## 📚 문서
+
+- **API 스펙**: [API_SPEC.md](API_SPEC.md) - 외부 서비스 연동 가이드
+- **상세 문서**: [DOCUMENTATION.md](DOCUMENTATION.md) - 시스템 전체 문서
+- **프로젝트 TODO**: [TODO.md](TODO.md) - 개발 계획 및 진행상황
+
 자세한 내용은 `DOCUMENTATION.md`를 참고하세요.
