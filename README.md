@@ -16,8 +16,15 @@ copy .env.example .env  # Windows
 ```
 
 3) 서버 실행
+
+**로컬 실행:**
 ```bash
 python api_server.py
+```
+
+**Docker 실행 (권장):**
+```bash
+docker-compose up -d
 ```
 
 4) API 문서
@@ -32,12 +39,16 @@ python api_server.py
 - GET `/api/v1/crawl/missing` 미보유 로고 크롤링 트리거(필터 지원: `prefix`, `fs_exchange`, `country`, `is_active`)
 - POST `/api/v1/crawl/single` 단일 크롤링
 
-## NAS:Q 크롤링 테스트
+## 크롤링 테스트
 
+API를 통한 크롤링 테스트:
 ```bash
-python test_nasq.py
+# 미보유 로고 크롤링 시작
+curl "http://localhost:8005/api/v1/crawl/missing?prefix=NAS:Q&limit=5"
+
+# 진행상황 확인 (job_id는 위 응답에서 받음)
+curl "http://localhost:8005/api/v1/progress/{job_id}"
 ```
-동작: `prefix=NAS:Q` 조건으로 미보유 종목을 수집하여 배치 크롤링을 시작하고 `job_id`로 진행상황을 확인합니다.
 
 ## 프로젝트 구조
 
@@ -53,13 +64,11 @@ stock_logo_crawler_test/
 │   ├── check_db.py
 │   ├── progress_manager.py
 │   └── query_db.py
-├── docs/                # 문서
-│   ├── README.md
-│   ├── DATABASE.md
-│   ├── IMPLEMENTATION.md
-│   ├── CRAWLER.md
-│   └── MASTER_DATA.md
-└── test_nasq.py         # 테스트 파일
+├── progress/            # 크롤링 진행상황 파일
+├── logs/               # 로그 파일
+├── API_SPEC.md         # API 사용 가이드
+├── DOCUMENTATION.md    # 상세 기술 문서
+└── README.md          # 프로젝트 개요
 ```
 
 ## 환경변수
@@ -68,12 +77,11 @@ stock_logo_crawler_test/
 - `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET`
 - `EXISTING_API_BASE`, `LOGO_DEV_TOKEN`, `LOGO_DEV_DAILY_LIMIT`
 - `PLAYWRIGHT_HEADLESS`, `AIOHTTP_TIMEOUT`, `USE_FAKE_USERAGENT`, `PROGRESS_DIR`
-- `IMAGE_SIZES`
+- `IMAGE_SIZES`, `WEBSITE_BASE_URL`
 
 ## 📚 문서
 
 - **API 스펙**: [API_SPEC.md](API_SPEC.md) - 외부 서비스 연동 가이드
 - **상세 문서**: [DOCUMENTATION.md](DOCUMENTATION.md) - 시스템 전체 문서
-- **프로젝트 TODO**: [TODO.md](TODO.md) - 개발 계획 및 진행상황
 
 자세한 내용은 `DOCUMENTATION.md`를 참고하세요.
