@@ -28,3 +28,4 @@ test_300.png
 
 # Progress snapshots
 prototype/progress/*.json
+progress/
