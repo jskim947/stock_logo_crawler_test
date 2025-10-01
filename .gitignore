@@ -9,6 +9,7 @@ __pycache__/
 # IDE
 .vscode/
 .idea/
+.cursor/
 
 # OS
 .DS_Store
