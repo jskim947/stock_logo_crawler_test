@@ -48,7 +48,7 @@ class LogoCrawler:
         from api_server import existing_api
         self.existing_api = existing_api
         
-    async def crawl_tradingview(self, infomax_code: str, ticker: str) -> Optional[bytes]:
+    async def crawl_website(self, infomax_code: str, ticker: str) -> Optional[bytes]:
         """웹사이트에서 로고 크롤링 (재시도 로직 포함)"""
         max_retries = 3
         base_timeout = 10000  # 10초
@@ -408,10 +408,10 @@ class LogoCrawler:
             if ticker and ticker.strip():
                 print(f"🔍 웹사이트 크롤링 시도: {infomax_code}")
                 try:
-                    image_data = await self.crawl_tradingview(infomax_code, ticker)
+                    image_data = await self.crawl_website(infomax_code, ticker)
                     if image_data:
-                        data_source = "tradingview"
-                        logo_hash = hashlib.md5(f"tradingview_{infomax_code}".encode()).hexdigest()
+                        data_source = "website"
+                        logo_hash = hashlib.md5(f"website_{infomax_code}".encode()).hexdigest()
                         print(f"🔍 웹사이트 크롤링 성공: {infomax_code}")
                     else:
                         print(f"🔍 웹사이트 크롤링 실패: {infomax_code}")

@@ -158,7 +158,7 @@ CREATE TABLE ext_api_quota (
 ALTER TABLE logo_files 
 ADD CONSTRAINT chk_file_format CHECK (file_format IN ('svg', 'png', 'webp', 'jpg', 'jfif'));
 ALTER TABLE logo_files 
-ADD CONSTRAINT chk_data_source CHECK (data_source IN ('tradingview', 'logo_dev', 'manual'));
+ADD CONSTRAINT chk_data_source CHECK (data_source IN ('website', 'logo_dev', 'manual'));
 ALTER TABLE logo_files 
 ADD CONSTRAINT chk_upload_type CHECK (upload_type IN ('crawled', 'manual', 'converted', 'auto'));
 ALTER TABLE logo_files 
@@ -185,8 +185,8 @@ class PlaywrightCrawler:
         }
         self.timeout = int(os.getenv('PLAYWRIGHT_TIMEOUT', '30000'))
     
-    async def crawl_tradingview(self, ticker: str) -> str:
-        """TradingView에서 로고 URL 추출"""
+    async def crawl_website(self, ticker: str) -> str:
+        """웹사이트에서 로고 URL 추출"""
         async with async_playwright() as p:
             browser = await p.chromium.launch(
                 headless=self.headless,
@@ -511,8 +511,8 @@ python scripts/check_db.py <INFOMAX_CODE> [provider]
 # logo_dev 프로바이더로 확인
 python scripts/check_db.py AMX:AIM
 
-# tradingview 프로바이더로 확인
-python scripts/check_db.py AMX:AIM tradingview
+# website 프로바이더로 확인
+python scripts/check_db.py AMX:AIM website
 ```
 
 **기능:**

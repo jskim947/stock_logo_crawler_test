@@ -408,7 +408,7 @@ def save_logo_data(infomax_code: str, logo_hash: str, file_info: dict) -> bool:
 # 기존 API 클라이언트는 이미 위에서 정의됨
 # crawler = LogoCrawler()  # 임시로 비활성화
 
-def generate_logo_hash(infomax_code: str, source: str = "tradingview") -> str:
+def generate_logo_hash(infomax_code: str, source: str = "website") -> str:
     """로고 해시 생성"""
     return hashlib.md5(f"{source}_{infomax_code}".encode()).hexdigest()
 
@@ -1469,7 +1469,7 @@ async def crawl_missing_logos(
         for item in missing_items:
             infomax_code = item['infomax_code']
             crawling_ticker = item.get('crawling_ticker', infomax_code)
-            api_domain = item.get('api_domain', 'tradingview')
+            api_domain = item.get('api_domain', 'website')
             
             tickers.append({
                 "infomax_code": infomax_code,
@@ -1727,7 +1727,7 @@ async def execute_crawl_batch(tickers: List[Dict], job_id: str):
                                     stat = minio_client.stat_object(MINIO_BUCKET, obj.object_name)
                                     file_info = {
                                         "format": "svg",
-                                        "source": "tradingview",
+                                        "source": "website",
                                         "upload_type": "crawled",
                                         "width": None,
                                         "height": None,

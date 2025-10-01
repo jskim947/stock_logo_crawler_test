@@ -42,7 +42,7 @@ GET /api/v1/stats
   "total_logos": 8,
   "today_logos": 8,
   "source_stats": {
-    "tradingview": 56
+    "website": 56
   },
   "timestamp": "2025-10-01T04:51:02.606928"
 }
@@ -191,7 +191,7 @@ Content-Type: multipart/form-data
 **파라미터:**
 - `file` (필수): 이미지 파일
 - `infomax_code` (필수): 종목 코드
-- `data_source` (선택): 데이터 소스 (manual, tradingview, logo_dev)
+- `data_source` (선택): 데이터 소스 (manual, website, logo_dev)
 - `upload_type` (선택): 업로드 타입 (manual, crawled)
 
 **예시:**
