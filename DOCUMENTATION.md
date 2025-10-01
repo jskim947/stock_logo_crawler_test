@@ -13,10 +13,10 @@
 
 ## 시스템 개요
 
-주식 로고 수집, 저장, 조회 및 관리 기능을 제공하는 시스템입니다. TradingView와 logo.dev를 통해 로고를 수집하고, MinIO에 저장하여 FastAPI를 통해 제공합니다.
+주식 로고 수집, 저장, 조회 및 관리 기능을 제공하는 시스템입니다. 웹사이트와 logo.dev를 통해 로고를 수집하고, MinIO에 저장하여 FastAPI를 통해 제공합니다.
 
 ### 주요 기능
-- TradingView에서 로고 크롤링
+- 웹사이트에서 로고 크롤링
 - logo.dev API를 통한 로고 수집
 - 이미지 변환 (SVG → PNG/WebP)
 - MinIO를 통한 파일 저장
@@ -26,7 +26,7 @@
 ## 기술 스택
 
 ### 백엔드
-- **Python**: Playwright(TradingView) + aiohttp(logo.dev)
+- **Python**: Playwright(웹사이트) + aiohttp(logo.dev)
 - **이미지 처리**: Pillow (SVG → PNG/WebP 변환)
 - **데이터베이스**: PostgreSQL
 - **스토리지**: MinIO (S3 호환)
@@ -215,7 +215,8 @@ class PlaywrightCrawler:
             """)
             
             try:
-                url = f'https://tradingview.com/symbols/{ticker}/news/'
+                base_url = os.getenv('TRADINGVIEW_BASE_URL', 'https://www.tradingview.com')
+                url = f'{base_url}/symbols/{ticker}/news/'
                 await page.goto(url, timeout=self.timeout)
                 
                 # 로고 이미지 대기 및 추출
@@ -260,7 +261,7 @@ class AiohttpClient:
         headers = {
             'User-Agent': self.ua.random,
             'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-            'Referer': 'https://tradingview.com/'
+            'Referer': os.getenv('TRADINGVIEW_BASE_URL', 'https://www.tradingview.com') + '/'
         }
         
         async with aiohttp.ClientSession(
@@ -393,6 +394,9 @@ RELOAD=true
 
 # 이미지 처리 설정
 IMAGE_SIZES=240,300
+
+# 크롤링 소스 설정
+TRADINGVIEW_BASE_URL=https://www.tradingview.com
 ```
 
 ## 배포 및 운영

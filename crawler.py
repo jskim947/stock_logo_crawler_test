@@ -1,6 +1,6 @@
 """
 로고 크롤링 모듈
-TradingView와 logo.dev에서 로고를 수집하는 기능을 제공
+웹사이트와 logo.dev에서 로고를 수집하는 기능을 제공
 """
 
 import asyncio
@@ -49,13 +49,13 @@ class LogoCrawler:
         self.existing_api = existing_api
         
     async def crawl_tradingview(self, infomax_code: str, ticker: str) -> Optional[bytes]:
-        """TradingView에서 로고 크롤링 (재시도 로직 포함)"""
+        """웹사이트에서 로고 크롤링 (재시도 로직 포함)"""
         max_retries = 3
         base_timeout = 10000  # 10초
         
         for attempt in range(max_retries):
             try:
-                logger.info(f"TradingView 크롤링 시도 {attempt + 1}/{max_retries}: {infomax_code}")
+                logger.info(f"웹사이트 크롤링 시도 {attempt + 1}/{max_retries}: {infomax_code}")
                 
                 # 시도마다 타임아웃 증가
                 timeout = base_timeout + (attempt * 5000)  # 10초, 15초, 20초
@@ -71,9 +71,10 @@ class LogoCrawler:
                     
                     page = await context.new_page()
                     
-                    # TradingView 페이지로 이동
-                    url = f"https://www.tradingview.com/symbols/{ticker}/"
-                    print(f"🔍 TradingView URL: {url} (타임아웃: {timeout}ms)")
+                    # 웹사이트 페이지로 이동
+                    base_url = os.getenv('TRADINGVIEW_BASE_URL', 'https://www.tradingview.com')
+                    url = f"{base_url}/symbols/{ticker}/"
+                    print(f"🔍 웹사이트 URL: {url} (타임아웃: {timeout}ms)")
                     await page.goto(url, timeout=timeout)
                     
                     # 로고 이미지 선택자 (여러 가능성 시도)
@@ -116,7 +117,7 @@ class LogoCrawler:
                     return None
                     
             except Exception as e:
-                print(f"TradingView 크롤링 오류 ({infomax_code}, 시도 {attempt + 1}): {e}")
+                print(f"웹사이트 크롤링 오류 ({infomax_code}, 시도 {attempt + 1}): {e}")
                 if attempt < max_retries - 1:
                     print(f"🔄 재시도 예정: {infomax_code}")
                     continue
@@ -403,21 +404,21 @@ class LogoCrawler:
             data_source = None
             logo_hash = None
             
-            # TradingView에서 크롤링 시도 (ticker가 있을 때만)
+            # 웹사이트에서 크롤링 시도 (ticker가 있을 때만)
             if ticker and ticker.strip():
-                print(f"🔍 TradingView 크롤링 시도: {infomax_code}")
+                print(f"🔍 웹사이트 크롤링 시도: {infomax_code}")
                 try:
                     image_data = await self.crawl_tradingview(infomax_code, ticker)
                     if image_data:
                         data_source = "tradingview"
                         logo_hash = hashlib.md5(f"tradingview_{infomax_code}".encode()).hexdigest()
-                        print(f"🔍 TradingView 크롤링 성공: {infomax_code}")
+                        print(f"🔍 웹사이트 크롤링 성공: {infomax_code}")
                     else:
-                        print(f"🔍 TradingView 크롤링 실패: {infomax_code}")
+                        print(f"🔍 웹사이트 크롤링 실패: {infomax_code}")
                 except Exception as e:
-                    print(f"🔍 TradingView 크롤링 오류: {infomax_code} - {e}")
+                    print(f"🔍 웹사이트 크롤링 오류: {infomax_code} - {e}")
             
-            # TradingView 실패 시 logo.dev 시도
+            # 웹사이트 실패 시 logo.dev 시도
             if not image_data and api_domain:
                 print(f"🔍 logo.dev 크롤링 시도: {infomax_code}")
                 try:
