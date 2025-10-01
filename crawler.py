@@ -73,7 +73,7 @@ class LogoCrawler:
                     
                     # 웹사이트 페이지로 이동
                     base_url = os.getenv('WEBSITE_BASE_URL', 'https://example.com')
-                    url = f"{base_url}/symbols/{ticker}/"
+                    url = f"{base_url}/symbols/{ticker}/news"
                     print(f"🔍 웹사이트 URL: {url} (타임아웃: {timeout}ms)")
                     await page.goto(url, timeout=timeout)
                     
@@ -82,35 +82,120 @@ class LogoCrawler:
                         'img[data-testid="logo"]',
                         '.tv-symbol-header__logo img',
                         '.tv-symbol-header__logo svg',
+                        '#js-category-content > div.js-symbol-page-header-root > div > div.symbolRow-NopKb87z > div > div.container-F4HZNWkx.logo-iJMmXWiA > img.logo-PsAlMQQF.xxxlarge-PsAlMQQF.large-F4HZNWkx.letter-PsAlMQQF',
                         'img[alt*="logo" i]',
                         'img[src*="logo" i]',
                         '.tv-symbol-header img',
                         'header img'
                     ]
                     
+                    # XPath 셀렉터 추가 (img 태그를 찾아서 src에서 SVG URL 추출)
+                    xpath_selectors = [
+                        # 원래 XPath들 (더 유연하게 수정)
+                        '/html/body/div[2]/main/div[2]/div[1]/div/div[1]/div/div[1]/img[1]',
+                        '/html/body/div[2]/main/div[2]/div[1]/div/div[1]/div/div[1]/img[2]',
+                        '/html/body/div[2]/main/div[2]/div[1]/div/div[1]/div/div[1]/img[3]',
+                        # 더 유연한 XPath들
+                        '//div[contains(@class, "symbolRow")]//img[1]',
+                        '//div[contains(@class, "symbolRow")]//img[2]',
+                        '//div[contains(@class, "symbolRow")]//img[3]',
+                        '//div[contains(@class, "logo")]//img[1]',
+                        '//div[contains(@class, "logo")]//img[2]',
+                        '//div[contains(@class, "logo")]//img[3]',
+                        # 일반적인 img 태그들
+                        '//img[contains(@class, "logo")]',
+                        '//img[contains(@src, "svg")]'
+                    ]
+                    
+                    # XPath 셀렉터 우선 시도
+                    for xpath in xpath_selectors:
+                        try:
+                            element = await page.wait_for_selector(f"xpath={xpath}", timeout=3000, state="attached")
+                            if element:
+                                # SVG인 경우
+                                if 'svg' in xpath:
+                                    svg_content = await element.inner_html()
+                                    await browser.close()
+                                    print(f"✅ SVG 크롤링 성공 (XPath): {infomax_code}")
+                                    return svg_content.encode('utf-8')
+                                # IMG인 경우
+                                else:
+                                    src = await element.get_attribute('src')
+                                    print(f"🔍 XPath IMG src 발견: {src}")
+                                    if src:
+                                        # 국기 이미지 제외 (country/로 시작하고 .svg로 끝나는 경우)
+                                        if 'country/' in src and src.endswith('.svg'):
+                                            print(f"🔍 국기 이미지 제외: {src}")
+                                            await browser.close()
+                                            return None  # logo.dev로 폴백
+                                        
+                                        # 상대 경로인 경우 절대 경로로 변환
+                                        if not src.startswith('http'):
+                                            base_url = os.getenv('WEBSITE_BASE_URL', 'https://example.com')
+                                            src = f"{base_url}{src}" if src.startswith('/') else f"{base_url}/{src}"
+                                        
+                                        print(f"🔍 최종 URL: {src}")
+                                        timeout_http = aiohttp.ClientTimeout(total=10)  # 10초 타임아웃
+                                        async with aiohttp.ClientSession(timeout=timeout_http) as session:
+                                            async with session.get(src) as response:
+                                                if response.status == 200:
+                                                    data = await response.read()
+                                                    await browser.close()
+                                                    print(f"✅ IMG 크롤링 성공 (XPath): {infomax_code}, 크기: {len(data)} bytes")
+                                                    return data
+                                                else:
+                                                    print(f"🔍 HTTP 응답 실패: {response.status}")
+                                    else:
+                                        print(f"🔍 XPath IMG src 없음: {xpath}")
+                                        continue
+                        except Exception as e:
+                            print(f"🔍 XPath 셀렉터 실패: {xpath} - {e}")
+                            continue
+                    
+                    # CSS 셀렉터 시도 (XPath 실패 시)
                     for selector in selectors:
                         try:
-                            element = await page.wait_for_selector(selector, timeout=timeout + 5000)
+                            element = await page.wait_for_selector(selector, timeout=3000, state="attached")  # 3초로 단축
                             if element:
                                 # SVG인 경우
                                 if 'svg' in selector:
                                     svg_content = await element.inner_html()
                                     await browser.close()
+                                    print(f"✅ SVG 크롤링 성공 (CSS): {infomax_code}")
                                     return svg_content.encode('utf-8')
                                 # IMG인 경우
                                 else:
                                     src = await element.get_attribute('src')
-                                    if src and src.startswith('http'):
+                                    print(f"🔍 CSS IMG src 발견: {src}")
+                                    if src:
+                                        # 국기 이미지 제외 (country/로 시작하고 .svg로 끝나는 경우)
+                                        if 'country/' in src and src.endswith('.svg'):
+                                            print(f"🔍 국기 이미지 제외: {src}")
+                                            await browser.close()
+                                            return None  # logo.dev로 폴백
+                                        
+                                        # 상대 경로인 경우 절대 경로로 변환
+                                        if not src.startswith('http'):
+                                            base_url = os.getenv('WEBSITE_BASE_URL', 'https://example.com')
+                                            src = f"{base_url}{src}" if src.startswith('/') else f"{base_url}/{src}"
+                                        
+                                        print(f"🔍 최종 URL: {src}")
                                         timeout_http = aiohttp.ClientTimeout(total=10)  # 10초 타임아웃
                                         async with aiohttp.ClientSession(timeout=timeout_http) as session:
                                             async with session.get(src) as response:
                                                 if response.status == 200:
+                                                    data = await response.read()
                                                     await browser.close()
-                                                    return await response.read()
-                        except:
+                                                    print(f"✅ IMG 크롤링 성공 (CSS): {infomax_code}, 크기: {len(data)} bytes")
+                                                    return data
+                                                else:
+                                                    print(f"🔍 HTTP 응답 실패: {response.status}")
+                        except Exception as e:
+                            print(f"🔍 CSS 셀렉터 실패: {selector} - {e}")
                             continue
                     
                     await browser.close()
+                    print(f"❌ 모든 셀렉터 실패: {infomax_code}")
                     if attempt < max_retries - 1:
                         print(f"🔄 재시도 예정: {infomax_code}")
                         continue
@@ -127,10 +212,13 @@ class LogoCrawler:
     
     async def crawl_logo_dev(self, infomax_code: str, api_domain: str) -> Optional[bytes]:
         """logo.dev API에서 로고 크롤링"""
+        print(f"🔍 logo.dev 크롤링 시작: {infomax_code}, api_domain: {api_domain}")
         try:
             if not self.logo_dev_token:
-                print("LOGO_DEV_TOKEN이 설정되지 않았습니다")
+                print("❌ LOGO_DEV_TOKEN이 설정되지 않았습니다")
                 return None
+            
+            print(f"🔍 logo.dev 토큰 확인: {self.logo_dev_token[:10]}...")
             
             # API 쿼터 확인
             if not await self._check_quota('logo_dev'):
@@ -138,16 +226,21 @@ class LogoCrawler:
                 return None
             
             url = f"https://img.logo.dev/{api_domain}?token={self.logo_dev_token}&format=png&size=300&fallback=404"
+            print(f"🔍 logo.dev API URL: {url}")
             
             timeout = aiohttp.ClientTimeout(total=15)  # 15초 타임아웃
             async with aiohttp.ClientSession(timeout=timeout) as session:
+                print(f"🔍 logo.dev API 호출 시작: {api_domain}")
                 async with session.get(url) as response:
+                    print(f"🔍 logo.dev API 응답: {response.status}")
                     if response.status == 200:
+                        data = await response.read()
+                        print(f"✅ logo.dev 크롤링 성공: {infomax_code}, 크기: {len(data)} bytes")
                         # 쿼터 사용량 업데이트
                         await self._update_quota('logo_dev')
-                        return await response.read()
+                        return data
                     else:
-                        print(f"logo.dev API 오류: {response.status}")
+                        print(f"❌ logo.dev API 오류: {response.status}")
                         return None
                         
         except Exception as e:
@@ -206,30 +299,46 @@ class LogoCrawler:
     
     def convert_image(self, image_data: bytes, infomax_code: str) -> Dict[str, bytes]:
         """이미지를 다양한 크기로 변환 (SVG → PNG/WebP 포함)"""
+        print(f"🔍 convert_image 함수 진입: {infomax_code}")
         try:
             results = {}
+            image = None
             
             # SVG인 경우 PNG/WebP로 변환
+            print(f"🔍 이미지 데이터 확인: {infomax_code}, 시작 바이트: {image_data[:50]}")
             if image_data.startswith(b'<svg') or image_data.startswith(b'<?xml'):
-                logger.info(f"SVG 파일 감지: {infomax_code}")
+                print(f"🔍 SVG 파일 감지: {infomax_code}")
                 
                 # SVG를 PIL Image로 변환하기 위해 cairosvg 사용 시도
                 try:
                     import cairosvg
                     # SVG를 PNG로 변환
                     png_data = cairosvg.svg2png(bytestring=image_data)
-                    image = Image.open(BytesIO(png_data))
-                    logger.info(f"SVG → PNG 변환 성공: {infomax_code}")
+                    print(f"🔍 SVG → PNG 변환 완료: {infomax_code} ({len(png_data)} bytes)")
+                    
+                    # PNG 데이터를 PIL Image로 열기
+                    png_buffer = BytesIO(png_data)
+                    image = Image.open(png_buffer)
+                    print(f"✅ SVG → PNG → PIL Image 변환 성공: {infomax_code}, 크기: {image.size}")
                 except ImportError:
-                    logger.warning("cairosvg가 설치되지 않음. SVG 원본만 저장")
+                    print("❌ cairosvg가 설치되지 않음. SVG 원본만 저장")
                     return {"original": image_data}
                 except Exception as e:
-                    logger.error(f"SVG 변환 실패: {e}")
+                    print(f"❌ SVG 변환 실패: {e}")
+                    print(f"🔍 PNG 데이터 확인: {png_data[:50] if 'png_data' in locals() else 'None'}")
                     return {"original": image_data}
             else:
                 # 일반 이미지 파일
+                print(f"🔍 일반 이미지 파일 감지: {infomax_code}")
                 image_buffer = BytesIO(image_data)
                 image = Image.open(image_buffer)
+            
+            # image가 None이면 변환 실패
+            if image is None:
+                print(f"❌ 이미지 변환 실패: {infomax_code}")
+                return {"original": image_data}
+            
+            print(f"🔍 이미지 변환 시작: {infomax_code}, 크기: {image.size}")
             
             # 표준 사이즈로 변환 (환경변수 IMAGE_SIZES 사용, 기본 240,300)
             sizes_env = os.getenv('IMAGE_SIZES', '240,300')
@@ -257,11 +366,12 @@ class LogoCrawler:
                         else:  # WebP
                             resized.save(output, format='WebP', quality=85, optimize=True)
                         
-                        results[f"{format_type.lower()}_{size}"] = output.getvalue()
-                        logger.debug(f"이미지 변환 완료: {format_type.lower()}_{size}px")
+                        converted_data = output.getvalue()
+                        results[f"{format_type.lower()}_{size}"] = converted_data
+                        print(f"✅ 이미지 변환 완료: {format_type.lower()}_{size}px ({len(converted_data)} bytes)")
                         
                     except Exception as e:
-                        logger.error(f"이미지 변환 실패 ({format_type}_{size}px): {e}")
+                        print(f"❌ 이미지 변환 실패 ({format_type}_{size}px): {e}")
                         continue
             
             logger.info(f"이미지 변환 완료: {infomax_code}, {len(results)}개 파일")
@@ -380,14 +490,22 @@ class LogoCrawler:
             # 타임아웃 설정 (30초)
             import asyncio
             try:
+                print(f"🔍 _crawl_logo_internal 호출 전: {infomax_code}")
+                print(f"🔍 asyncio.wait_for 시작: {infomax_code}")
                 result = await asyncio.wait_for(
                     self._crawl_logo_internal(infomax_code, ticker, api_domain),
                     timeout=30.0
                 )
+                print(f"🔍 _crawl_logo_internal 호출 후: {infomax_code}, 결과: {result}")
                 print(f"🔍🔍🔍 CRAWL_LOGO 함수 완료: {infomax_code}, 결과: {result}")
                 return result
             except asyncio.TimeoutError:
                 print(f"🔍 크롤링 타임아웃: {infomax_code}")
+                return False
+            except Exception as e:
+                print(f"🔍 asyncio.wait_for 오류: {infomax_code} - {e}")
+                import traceback
+                print(f"🔍 asyncio 오류 상세: {traceback.format_exc()}")
                 return False
                 
         except Exception as e:
@@ -409,6 +527,7 @@ class LogoCrawler:
                 print(f"🔍 웹사이트 크롤링 시도: {infomax_code}")
                 try:
                     image_data = await self.crawl_website(infomax_code, ticker)
+                    print(f"🔍 crawl_website 반환값 확인: {infomax_code}, 타입: {type(image_data)}, 길이: {len(image_data) if image_data else 'None'}")
                     if image_data:
                         data_source = "website"
                         logo_hash = hashlib.md5(f"website_{infomax_code}".encode()).hexdigest()
@@ -438,8 +557,12 @@ class LogoCrawler:
             
             # 이미지 변환
             print(f"🔍 이미지 변환 시작: {infomax_code}")
-            converted_images = self.convert_image(image_data, infomax_code)
-            print(f"🔍 이미지 변환 완료: {infomax_code}")
+            try:
+                converted_images = self.convert_image(image_data, infomax_code)
+                print(f"🔍 이미지 변환 완료: {infomax_code}")
+            except Exception as e:
+                print(f"❌ 이미지 변환 중 오류: {infomax_code} - {e}")
+                converted_images = {"original": image_data}
             
             # master에서 logo_hash 조회
             print(f"🔍 master에서 logo_hash 조회: {infomax_code}")
@@ -449,6 +572,7 @@ class LogoCrawler:
                     "search": infomax_code,
                     "limit": 1
                 })
+                print(f"🔍 master 조회 결과: {master_result}")
                 
                 if master_result and 'data' in master_result and master_result['data']:
                     logo_hash = master_result['data'][0]['logo_hash']
@@ -478,10 +602,10 @@ class LogoCrawler:
                     content_type = f"image/{format_type.lower()}"
                     is_original = False
                 
-                print(f"🔍 MinIO 저장 시도: {object_key}")
+                print(f"🔍 MinIO 저장 시도: {object_key}, 크기: {len(img_data)} bytes")
                 if await self.save_to_minio(img_data, object_key, content_type):
                     print(f"✅ MinIO 저장 성공: {object_key}")
-                    saved_files.append({
+                    file_info = {
                         'object_key': object_key,
                         'format': format_type.lower(),
                         'dimension_width': int(size) if size else None,
@@ -489,7 +613,9 @@ class LogoCrawler:
                         'file_size': len(img_data),
                         'is_original': is_original,
                         'data_source': data_source
-                    })
+                    }
+                    saved_files.append(file_info)
+                    print(f"🔍 파일 정보 추가: {file_info}")
                 else:
                     print(f"❌ MinIO 저장 실패: {object_key}")
             

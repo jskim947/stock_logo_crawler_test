@@ -83,6 +83,9 @@ class ExistingAPIClient:
                 return {"text": response.text}
         except Exception as e:
             logger.error(f"기존 API 데이터 입력 오류: {e}")
+            print(f"❌ upsert_data 오류 상세: {e}")
+            print(f"❌ URL: {url}")
+            print(f"❌ 데이터: {data}")
             return None
 
 # FastAPI 앱 초기화
@@ -394,6 +397,7 @@ def save_logo_data(infomax_code: str, logo_hash: str, file_info: dict) -> bool:
         file_result = existing_api.upsert_data("raw_data", "logo_files", file_data)
         if not file_result:
             print(f"❌ logo_files 테이블 저장 실패: {infomax_code}")
+            print(f"❌ file_result: {file_result}")
             return False
         
         print(f"✅ logo_files 테이블 저장 성공: logo_id={logo_id}")
@@ -1719,6 +1723,8 @@ async def execute_crawl_batch(tickers: List[Dict], job_id: str):
                             objects_list = list(objects)
                             print(f"      🔍 MinIO 객체 목록: {objects_list}")
                             
+                            # 모든 파일을 처리 (SVG 우선, 그 다음 PNG/WebP)
+                            processed_files = []
                             for obj in objects_list:
                                 print(f"      🔍 MinIO 객체 확인: {obj.object_name}")
                                 if obj.object_name.endswith('_original.svg'):
@@ -1736,17 +1742,45 @@ async def execute_crawl_batch(tickers: List[Dict], job_id: str):
                                         "is_original": True
                                     }
                                     print(f"      🔍 파일 정보 수집: {file_info}")
+                                    processed_files.append(file_info)
+                                elif obj.object_name.endswith('.png') or obj.object_name.endswith('.webp'):
+                                    print(f"      🔍 이미지 파일 발견: {obj.object_name}")
+                                    # 파일 정보 수집
+                                    stat = minio_client.stat_object(MINIO_BUCKET, obj.object_name)
+                                    # 파일명에서 크기 추출 (예: _240.png -> 240)
+                                    size = None
+                                    if '_' in obj.object_name:
+                                        try:
+                                            size = int(obj.object_name.split('_')[-1].split('.')[0])
+                                        except:
+                                            size = None
                                     
-                                    # DB 저장
-                                    print(f"      🔍 DB 저장 시도: {ticker['infomax_code']}")
+                                    file_info = {
+                                        "format": "png" if obj.object_name.endswith('.png') else "webp",
+                                        "source": "logo_dev",  # logo.dev에서 온 파일
+                                        "upload_type": "crawled",
+                                        "width": size,
+                                        "height": size,
+                                        "size": stat.size,
+                                        "minio_key": obj.object_name,
+                                        "is_original": False
+                                    }
+                                    print(f"      🔍 파일 정보 수집: {file_info}")
+                                    processed_files.append(file_info)
+                                else:
+                                    print(f"      🔍 알 수 없는 파일: {obj.object_name}")
+                            
+                            # DB 저장 (모든 파일)
+                            if processed_files:
+                                print(f"      🔍 DB 저장 시도: {ticker['infomax_code']}, 파일 개수: {len(processed_files)}")
+                                for file_info in processed_files:
                                     db_success = save_logo_data(ticker['infomax_code'], logo_hash, file_info)
                                     if db_success:
-                                        print(f"      ✅ DB 저장 성공: {ticker['infomax_code']}")
+                                        print(f"      ✅ DB 저장 성공: {ticker['infomax_code']} - {file_info['format']}")
                                     else:
-                                        print(f"      ❌ DB 저장 실패: {ticker['infomax_code']}")
-                                    break
-                                else:
-                                    print(f"      🔍 SVG 파일 아님: {obj.object_name}")
+                                        print(f"      ❌ DB 저장 실패: {ticker['infomax_code']} - {file_info['format']}")
+                            else:
+                                print(f"      ❌ 처리할 파일이 없음: {ticker['infomax_code']}")
                         except Exception as minio_error:
                             print(f"      ❌ MinIO 조회 오류: {minio_error}")
                             import traceback
