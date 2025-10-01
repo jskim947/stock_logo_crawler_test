@@ -72,7 +72,7 @@ class LogoCrawler:
                     page = await context.new_page()
                     
                     # 웹사이트 페이지로 이동
-                    base_url = os.getenv('WEBSITE_BASE_URL', 'https://www.tradingview.com')
+                    base_url = os.getenv('WEBSITE_BASE_URL', 'https://example.com')
                     url = f"{base_url}/symbols/{ticker}/"
                     print(f"🔍 웹사이트 URL: {url} (타임아웃: {timeout}ms)")
                     await page.goto(url, timeout=timeout)
