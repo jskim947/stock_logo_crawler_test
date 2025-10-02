@@ -18,6 +18,7 @@ services:
       - EXISTING_API_BASE=http://10.150.2.150:8004
       - LOGO_DEV_TOKEN=${LOGO_DEV_TOKEN}
       - IMAGE_SIZES=${IMAGE_SIZES}
+      - WEBSITE_BASE_URL=${WEBSITE_BASE_URL:-https://www.tradingview.com}
       - PROGRESS_DIR=progress
       - WEBSITE_BASE_URL=${WEBSITE_BASE_URL}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-default-secret-key}

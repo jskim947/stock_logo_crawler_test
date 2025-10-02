@@ -1550,9 +1550,10 @@ async def collect_missing_logos_streaming(
     is_active: Optional[bool] = None,
     prefix: Optional[str] = None
 ) -> List[Dict]:
-    """스트리밍으로 미보유 로고 수집 - 메모리 효율적"""
+    """스트리밍으로 미보유 로고 수집 - 메모리 효율적 (랜덤 페이지 샘플링)"""
+    import random
+    
     collected = []
-    page = 1
     size = 100  # 한 번에 가져올 최대 수 (API 제한)
     
     # 필터 조건 준비
@@ -1563,10 +1564,39 @@ async def collect_missing_logos_streaming(
         "prefix": prefix
     }
     
-    while len(collected) < limit:
+    # 전체 페이지 수 확인 (조건에 맞는 총 페이지 수)
+    print(f"🎲 랜덤 페이지 샘플링 시작...")
+    
+    # 조건에 맞는 총 페이지 수 확인
+    if prefix:
+        print(f"   prefix '{prefix}' 조건으로 총 페이지 수 확인...")
+        total_response = existing_api.query_table("raw_data", "logo_master_with_status", {
+            "search": prefix,
+            "search_column": "infomax_code",
+            "limit": 1
+        })
+    else:
+        print(f"   전체 데이터 조건으로 총 페이지 수 확인...")
+        total_response = existing_api.query_table("raw_data", "logo_master_with_status", {
+            "limit": 1
+        })
+    
+    total_pages = total_response.get('total_pages', 1)
+    print(f"   📊 조건에 맞는 전체 페이지 수: {total_pages}")
+    
+    # 랜덤하게 페이지들을 선택 (limit의 1/10만큼 페이지 선택, 최소 1개, 최대 전체 페이지 수)
+    pages_to_sample = max(1, min(limit // 10, total_pages))
+    selected_pages = random.sample(range(1, total_pages + 1), pages_to_sample)
+    print(f"   🎯 랜덤 선택된 페이지: {sorted(selected_pages)} (총 {len(selected_pages)}개)")
+    
+    # 선택된 페이지들을 순회
+    for page in selected_pages:
+        if len(collected) >= limit:
+            break
+            
         print(f"🔍 페이지 {page} 조회 중... (현재 수집: {len(collected)}/{limit})")
         
-        # 1. prefix가 있으면 search로 먼저 필터링
+        # 조건에 맞는 페이지 데이터 조회
         if prefix:
             print(f"   prefix '{prefix}'로 검색...")
             response = existing_api.query_table("raw_data", "logo_master_with_status", {
@@ -1576,7 +1606,6 @@ async def collect_missing_logos_streaming(
                 "size": size
             })
         else:
-            # 2. 모든 데이터를 페이징으로 수집
             print(f"   전체 데이터 조회...")
             response = existing_api.query_table("raw_data", "logo_master_with_status", {
                 "page": page,
@@ -1585,11 +1614,11 @@ async def collect_missing_logos_streaming(
         
         if not response or not response.get('data'):
             print(f"   ❌ 응답 없음 또는 데이터 없음")
-            break
+            continue
         
         print(f"   📊 페이지 {page}에서 {len(response['data'])}개 항목 조회")
         
-        # 3. 가져온 데이터를 실시간으로 필터링
+        # 가져온 데이터를 실시간으로 필터링
         page_missing_count = 0
         for item in response['data']:
             if len(collected) >= limit:
@@ -1609,18 +1638,6 @@ async def collect_missing_logos_streaming(
                 print(f"      ❌ 제외: {infomax_code} (has_any_file={has_any_file})")
         
         print(f"   📊 페이지 {page}에서 {page_missing_count}개 미보유 항목 수집")
-        
-        # 4. 마지막 페이지인지 확인
-        if page >= response.get('total_pages', 1):
-            print(f"   📄 마지막 페이지 도달")
-            break
-        
-        # 5. limit에 도달했으면 중단
-        if len(collected) >= limit:
-            print(f"   🎯 limit {limit}에 도달하여 중단")
-            break
-            
-        page += 1
     
     return collected
 
